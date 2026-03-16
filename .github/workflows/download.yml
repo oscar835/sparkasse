@@ -1,17 +1,12 @@
-name: Download Sparkasse Excel
+name: Debug Sparkasse Seite
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 8 * * *"
 
 jobs:
-  download:
+  debug:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout
@@ -28,26 +23,15 @@ jobs:
           playwright install chromium
           playwright install-deps chromium
 
-      - name: Excel herunterladen
-        run: python scripts/download_sparkasse.py
+      - name: Debug Script ausfuehren
+        run: python scripts/debug_page.py
 
-      - name: Datei als Artifact hochladen
+      - name: Debug Dateien hochladen
         uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: sparkasse-excel
-          path: downloads/*
-          retention-days: 30
-
-      - name: Datei ins Repo committen
-        run: |
-          mkdir -p data
-          cp downloads/* data/
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/
-          if git diff --staged --quiet; then
-            echo "Keine Aenderungen"
-          else
-            git commit -m "Daten aktualisiert $(date '+%Y-%m-%d')"
-            git push
-          fi
+          name: debug-output
+          path: |
+            debug_full.png
+            debug_page.html
+          retention-days: 5
