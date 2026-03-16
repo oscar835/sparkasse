@@ -1,7 +1,6 @@
 import asyncio
 import glob
 import os
-import shutil
 from playwright.async_api import async_playwright
 
 
@@ -24,73 +23,83 @@ async def download_excel():
             timeout=60000,
         )
 
-        # Cookie-Banner akzeptieren
+        await page.wait_for_timeout(3000)
+
+        # --- SCHRITT 1: Cookie-Banner "Ich bin einverstanden" ---
         try:
-            cookie_btn = page.locator(
-                "button:has-text('Alle akzeptieren'), "
-                "#onetrust-accept-btn-handler"
-            )
-            if await cookie_btn.first.is_visible(timeout=5000):
-                print("Cookie-Banner akzeptieren...")
-                await cookie_btn.first.click()
-                await page.wait_for_timeout(2000)
+            cookie_btn = page.locator("#popin_tc_privacy_button")
+            await cookie_btn.click(timeout=5000)
+            print("Cookie-Banner akzeptiert")
+            await page.wait_for_timeout(2000)
         except Exception:
             print("Kein Cookie-Banner gefunden")
 
-        await page.wait_for_timeout(3000)
-
-        # "Alles auswählen" klicken
-        print("Klicke auf Alles auswaehlen...")
+        # --- SCHRITT 2: Consent-Dialog "Akzeptieren" ---
         try:
-            alles_btn = page.locator(
-                "text='Alles auswählen', "
-                "text='ALLES AUSWÄHLEN', "
-                "button:has-text('Alles auswählen'), "
-                "a:has-text('Alles auswählen'), "
-                "label:has-text('Alles auswählen')"
-            )
-            await alles_btn.first.scroll_into_view_if_needed(timeout=10000)
-            await page.wait_for_timeout(1000)
-            await alles_btn.first.click(timeout=10000)
-            print("Alles auswaehlen geklickt!")
-        except Exception as e:
-            print(f"Fehler bei Alles auswaehlen: {e}")
-            checkboxes = page.locator("input[type='checkbox']")
-            count = await checkboxes.count()
-            for i in range(count):
-                try:
-                    if not await checkboxes.nth(i).is_checked():
-                        await checkboxes.nth(i).click()
-                except Exception:
-                    pass
+            accept_btn = page.locator('[data-testid="button-accept"]')
+            await accept_btn.click(timeout=5000)
+            print("Consent-Dialog akzeptiert")
+            await page.wait_for_timeout(2000)
+        except Exception:
+            print("Kein Consent-Dialog gefunden")
 
         await page.wait_for_timeout(2000)
 
-        # "Download" klicken
-        print("Klicke auf Download...")
+        # --- SCHRITT 3: "Alle auswählen" klicken ---
+        print("Klicke 'Alle auswaehlen'...")
+        alle_btn = page.locator(
+            'button.btn--secondary:has(span.wb:text-is("Alle auswählen"))'
+        )
+        await alle_btn.scroll_into_view_if_needed(timeout=10000)
+        await page.wait_for_timeout(1000)
+        await alle_btn.click()
+        print("'Alle auswaehlen' erfolgreich geklickt!")
+
+        await page.wait_for_timeout(3000)
+
+        # --- SCHRITT 4: Warten bis Download-Button ENABLED wird ---
+        print("Warte bis Download-Button aktiv wird...")
+        await page.wait_for_function(
+            """() => {
+                const buttons = document.querySelectorAll('button.btn--secondary');
+                for (const btn of buttons) {
+                    const span = btn.querySelector('span.wb');
+                    if (span && span.textContent.trim() === 'Download' && !btn.disabled) {
+                        return true;
+                    }
+                }
+                return false;
+            }""",
+            timeout=10000,
+        )
+        print("Download-Button ist aktiv!")
+
+        # --- SCHRITT 5: Download klicken ---
+        print("Klicke 'Download'...")
+        dl_btn = page.locator(
+            'button.btn--secondary:has(span.wb:text-is("Download"))'
+        )
+
         async with page.expect_download(timeout=30000) as download_info:
-            dl_btn = page.locator(
-                "button:has-text('Download'), "
-                "a:has-text('Download'), "
-                "button:has-text('Herunterladen'), "
-                "a:has-text('Herunterladen')"
-            )
-            await dl_btn.first.scroll_into_view_if_needed(timeout=10000)
-            await dl_btn.first.click(timeout=10000)
+            await dl_btn.click()
 
         download = await download_info.value
-        dest_path = os.path.join(download_dir, download.suggested_filename)
+        filename = download.suggested_filename
+        dest_path = os.path.join(download_dir, filename)
         await download.save_as(dest_path)
-        print(f"Gespeichert: {dest_path}")
+        print(f"Datei gespeichert: {dest_path}")
 
         await browser.close()
 
+    # Pruefen ob Datei existiert
     files = glob.glob(os.path.join(download_dir, "*"))
     if files:
+        print("\nErfolgreich heruntergeladen:")
         for f in files:
-            print(f"Datei: {os.path.basename(f)} ({os.path.getsize(f)} Bytes)")
+            size = os.path.getsize(f)
+            print(f"  {os.path.basename(f)} ({size} Bytes)")
     else:
-        raise Exception("Download fehlgeschlagen!")
+        raise Exception("Download fehlgeschlagen - keine Datei gefunden!")
 
     return dest_path
 
