@@ -31,14 +31,24 @@ jobs:
       - name: Excel herunterladen
         run: python scripts/download_sparkasse.py
 
+      - name: Debug Screenshots hochladen
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: debug-screenshots
+          path: "*.png"
+          retention-days: 5
+
       - name: Datei als Artifact hochladen
         uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: sparkasse-excel
           path: downloads/*
           retention-days: 30
 
       - name: Datei ins Repo committen
+        if: success()
         run: |
           mkdir -p data
           cp downloads/* data/
