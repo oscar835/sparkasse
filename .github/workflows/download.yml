@@ -39,25 +39,88 @@ jobs:
           path: "*.png"
           retention-days: 5
 
-      - name: Datei als Artifact hochladen
-        uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: sparkasse-excel
-          path: downloads/*
-          retention-days: 30
-
-      - name: Datei ins Repo committen
+      - name: Datei mit Datum umbenennen und ins Repo committen
         if: success()
         run: |
           mkdir -p data
-          cp downloads/* data/
+
+          # Datum fuer Dateinamen
+          DATUM=$(date '+%Y-%m-%d')
+
+          # Originale Datei finden
+          ORIGINAL=$(ls downloads/ | head -1)
+          echo "Original Datei: $ORIGINAL"
+
+          # Dateiendung extrahieren
+          EXTENSION="${ORIGINAL##*.}"
+
+          # Neuer Name mit Datum
+          NEUER_NAME="sparkasse_muenzen_barren_${DATUM}.${EXTENSION}"
+          echo "Neuer Name: $NEUER_NAME"
+
+          # Kopieren mit neuem Namen
+          cp "downloads/$ORIGINAL" "data/$NEUER_NAME"
+
+          # Auch "aktuell" Datei erstellen (immer die neueste)
+          cp "downloads/$ORIGINAL" "data/sparkasse_aktuell.${EXTENSION}"
+
+          echo "name=$NEUER_NAME" >> $GITHUB_OUTPUT
+
+          # Alle Dateien im data Ordner anzeigen
+          echo ""
+          echo "=== Alle Dateien im data/ Ordner ==="
+          ls -la data/
+          echo ""
+          echo "Anzahl Dateien: $(ls data/ | wc -l)"
+
+          # Git commit
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/
           if git diff --staged --quiet; then
             echo "Keine Aenderungen"
           else
-            git commit -m "Daten aktualisiert $(date '+%Y-%m-%d')"
+            git commit -m "Daten aktualisiert ${DATUM}"
             git push
           fi
+        id: datei
+
+      - name: Datei als Artifact hochladen
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: sparkasse-excel-${{ steps.datei.outputs.name }}
+          path: downloads/*
+          retention-days: 30
+
+      - name: Dateiname ermitteln
+        if: success()
+        id: filename
+        run: |
+          FILE=$(ls downloads/ | head -1)
+          echo "name=$FILE" >> $GITHUB_OUTPUT
+
+      - name: Excel per E-Mail senden
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.office365.com
+          server_port: 587
+          secure: true
+          username: ${{ secrets.EMAIL_ADDRESS }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "Sparkasse Muenzen & Barren - ${{ steps.filename.outputs.name }}"
+          html_body: |
+            <h2>Sparkasse Muenzen & Barren</h2>
+            <p>Die aktuelle Excel-Datei wurde heruntergeladen.</p>
+            <ul>
+              <li><strong>Datei:</strong> ${{ steps.filename.outputs.name }}</li>
+            </ul>
+            <p>Viele Gruesse,<br>GitHub Actions Bot</p>
+          from: ${{ secrets.EMAIL_ADDRESS }}
+          to: ${{ secrets.EMAIL_TO }}
+          attachments: downloads/*
+
+      - name: E-Mail Versand bestaetigt
+        if: success()
+        run: echo "E-Mail wurde gesendet!"
